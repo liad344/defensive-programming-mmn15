@@ -1,7 +1,12 @@
 import logging
+import sqlite3
 
 import protocol
 import socket
+
+from client import Client
+from protocol import responses
+from request_handlers import registration, _CRC_not_ok, _CRC_ok, recive_file, reconnect, receive_public_key
 
 #  Protocol V0.0
 #
@@ -17,10 +22,30 @@ def readConfigFile():
 
 
 class Server:
+
+    # todo: Add shutdown and clode all tcp/db connections
     def __init__(self):
         self.port = readConfigFile()
         self.host = "0.0.0.0"
         self.logger = logging.getLogger('server_logger')
+        self.db = sqlite3.connect("defensive.db")
+        self.init_tables()
+        self.clients = self.load_client_from_db()
+
+    def init_tables(self):
+        # todo: check if already exsist, if so dont load
+        cursor = self.db.cursor()
+        sql = '''
+        CREATE TABLE clients (
+            ID TEXT PRIMARY KEY,
+            Name TEXT,
+            PublicKey TEXT,
+            LastSeen DATETIME,
+            AESKey TEXT
+        );
+        '''
+        cursor.execute(sql)
+        self.db.commit()
 
     def read_requests(self, conn) -> protocol.Request:
         try:
@@ -31,7 +56,6 @@ class Server:
 
         except Exception as e:
             self.logger.error(e)
-
 
     def listen(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -44,35 +68,53 @@ class Server:
                     request = self.read_requests(conn)
                     self.request_router(request)
 
-    def request_router(self, code):
-        match code:
+    def request_router(self, request):
+        match request.header.code:
             case 1025:
-                self.registration()
+                registration(request.payload)
             case 1026:
-                self.receive_public_key()
+                receive_public_key()
             case 1027:
-                self.reconnect()
+                reconnect()
             case 1028:
-                self.recive_file()
+                recive_file()
             case 1029:
-                self._CRC_ok()
+                _CRC_ok()
             case 1030:
-                self._CRC_not_ok()
+                _CRC_not_ok()
 
-    def registration(self):
-        pass
+    def load_client_from_db(self):
+        # Create a cursor object
+        cursor = self.db.cursor()
 
-    def receive_public_key(self):
-        pass
+        # SQL query to fetch all clients
+        query = "SELECT ID, Name, PublicKey, LastSeen, AESKey FROM clients"
 
-    def reconnect(self):
-        pass
+        # Execute the query
+        cursor.execute(query)
 
-    def recive_file(self):
-        pass
+        # Create a dictionary to store clients
+        clients = {}
 
-    def _CRC_not_ok(self):
-        pass
+        # Iterate over query results
+        for row in cursor.fetchall():
+            # Create a Client object and add it to the dictionary
+            client = Client(id=row[0], name=row[1], publicKey=row[2], lastSeen=row[3], aesKey=row[4])
+            clients[client.id] = client
 
-    def _CRC_ok(self):
+        return clients
+
+    def registration(self, payload):
+        #todo: parse payload, should be string name
+        name = "todo parse paylod"
+        for client_id, client in self.clients.items():
+            if client.name == name:
+                return responses.FailedResponse
+            else:
+                self.add_client(client)
+
+    def add_client(self, client):
         pass
+        
+
+

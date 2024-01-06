@@ -3,7 +3,7 @@ import struct
 
 class RequestHeader:
     def __init__(self, client_id, code, version, payload_size):
-        self.status_code = code
+        self.code = code
         self.version = version
         self.payload_size = payload_size
         self.client_id = client_id
