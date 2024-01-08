@@ -1,15 +1,15 @@
 import logging
 import sqlite3
-import uuid
 
 import handlers
+from handlers import crypto
 import parser
 import protocol
 import socket
 
 from client import Client
 from protocol import responses
-from request_handlers import registration, _CRC_not_ok, _CRC_ok, recive_file, reconnect, receive_public_key
+from request_handlers import _CRC_not_ok, _CRC_ok, recive_file, reconnect
 
 #  Protocol V0.0
 #
@@ -28,6 +28,7 @@ class Server:
 
     # todo: Add shutdown and clode all tcp/db connections
     def __init__(self):
+        self.db_handler = handlers.Db("name")
         self.crypto_handler = handlers.Crypto("name")
         self.port = readConfigFile()
         self.host = "0.0.0.0"
@@ -137,5 +138,9 @@ class Server:
         self.update_client(name, aes_key,public_key)
         pass
 
-    def update_client(self, name, aes_key,public_key):
-        pass
+    def update_client(self, name, aes_key, public_key):
+        self.db_handler.update_client(name, aes_key, public_key)
+
+        # todo: decide if clients is by id or by name- unclear from assignment
+        self.clients[name].aesKey = aes_key
+        self.clients[name].publicKey = public_key
