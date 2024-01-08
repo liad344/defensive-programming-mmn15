@@ -2,8 +2,6 @@ import logging
 import sqlite3
 
 import handlers
-from handlers import crypto
-import parser
 import protocol
 import socket
 
