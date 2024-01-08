@@ -1,6 +1,9 @@
 import logging
 import sqlite3
+import uuid
 
+import handlers
+import parser
 import protocol
 import socket
 
@@ -25,6 +28,7 @@ class Server:
 
     # todo: Add shutdown and clode all tcp/db connections
     def __init__(self):
+        self.crypto_handler = handlers.Crypto("name")
         self.port = readConfigFile()
         self.host = "0.0.0.0"
         self.logger = logging.getLogger('server_logger')
@@ -71,9 +75,12 @@ class Server:
     def request_router(self, request):
         match request.header.code:
             case 1025:
-                registration(request.payload)
+                # todo: error handling
+                parsed = parser.registration_request(request)
+                self.register_new_user(parsed)
             case 1026:
-                receive_public_key()
+                parsed = parser.aes_key_request(request)
+                self.receive_public_key(parsed)
             case 1027:
                 reconnect()
             case 1028:
@@ -104,17 +111,31 @@ class Server:
 
         return clients
 
-    def registration(self, payload):
-        #todo: parse payload, should be string name
-        name = "todo parse paylod"
+    def register_new_user(self, payload):
+        new_client_name = "todo parse paylod"
+        client = Client(name=new_client_name)
         for client_id, client in self.clients.items():
-            if client.name == name:
+            if client.name == new_client_name:
                 return responses.FailedResponse
-            else:
-                self.add_client(client)
+
+        self.add_client(client)
 
     def add_client(self, client):
+        # todo: move to server utils
+        cursor = self.db.cursor()
+        query = '''INSERT INTO clients (ID, Name, PublicKey, LastSeen, AESKey) 
+                   VALUES (?, ?, ?, ?, ?)'''
+        cursor.execute(query,
+                       (client.id, client.name, client.publicKey, client.lastSeen, client.aesKey))
+
+        self.clients[client.id] = client
+
+    def receive_public_key(self, name, public_key):
+        #todo: move db handlers to client handler?
+        aes_key = self.crypto_handler.generate_aes_key()
+        self.crypto_handler.encrypt_with_public_key(aes_key, public_key)
+        self.update_client(name, aes_key,public_key)
         pass
-        
 
-
+    def update_client(self, name, aes_key,public_key):
+        pass

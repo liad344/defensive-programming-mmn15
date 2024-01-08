@@ -31,6 +31,23 @@ class Request:
         self.header = header
         self.payload = payload
 
+    @classmethod
+    def from_bytes(cls, data):
+        # Unpack the data
+        # Format string: '16sBHI' -> 16-char string, 1-byte uint, 2-byte uint, 4-byte uint
+        unpacked_data = struct.unpack('16sBHI', data)
+
+        # TODO: check this line out, pretty sure its ASCII with different ternintion
+        # Process the ClientId to remove null bytes and convert to a string
+        client_id = unpacked_data[0].decode('utf-8').rstrip('\x00')
+
+        # Remaining fields
+        version = unpacked_data[1]
+        code = unpacked_data[2]
+        payload_size = unpacked_data[3]
+
+        return cls(client_id, version, code, payload_size)
+
 
 class RegistrationRequest(Request):
     def __init__(self, client_id, version, name):
