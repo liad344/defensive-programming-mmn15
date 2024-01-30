@@ -5,10 +5,10 @@ import client
 import services
 import protocol
 import socket
+import selectors
 
 from client import Client
 from protocol import responses
-from request_handlers import _CRC_not_ok, _CRC_ok, recive_file, reconnect
 
 #  Protocol V0.0
 #
@@ -34,6 +34,7 @@ class Server:
         self.logger = logging.getLogger('server_logger')
         self.clients = self.db_service.load_clients()
         self.parser = services.RequestParser()
+        self.selector = selectors.DefaultSelector()
 
     def update_client(self, name, aes_key, public_key):
         self.db_service.update_client(name, aes_key, public_key)
@@ -45,28 +46,42 @@ class Server:
     def send_response(self, response):
         pass
 
-    def listen(self):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind((self.host, self.port))
-            s.listen()
-            conn, addr = s.accept()
-            with conn:
-                print(f"Connected by {addr}")
-                while True:
-                    request = self.read_requests(conn)
-                    self.request_router(request)
+    def accept(self, sock, mask):
+        conn, addr = sock.accept()  # Socket should be ready
+        print('accepted', conn, 'from', addr)
+        conn.setblocking(False)
+        self.selector.register(conn, selectors.EVENT_READ, self.read)
 
-    def read_requests(self, conn) -> protocol.Request:
-        try:
+    def read(self, conn, mask):
+        with conn:
             header_bytes = conn.recv(HeaderSize)
-            header = protocol.RequestHeader.from_bytes(header_bytes)
-            payload = conn.recv(header.payload_size)
-            return protocol.Request(header, payload)
+            if header_bytes:
+              header = protocol.RequestHeader.from_bytes(header_bytes)
+              payload = conn.recv(header.payload_size)
+              req = protocol.Request(header, payload)
+              if req is not None:
+                self.request_router(req)
+            else:
+              print('closing', conn)
+              self.selector.unregister(conn)
+              conn.close()
 
-        except Exception as e:
-            self.logger.error(e)
-
+    def listen(self):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind((self.host, self.port))
+        s.listen()
+        s.setblocking(False)
+        self.selector.register(s, selectors.EVENT_READ, self.accept)
+        try:
+            while True:
+                events = self.selector.select()
+                for key, mask in events:
+                    callback = key.data
+                    callback(key.fileobj, mask)
+        finally:
+            s.close()
     def request_router(self, request):
+        print("in req router")
         match request.header.code:
             case 1025:
                 # todo: error handling
@@ -85,9 +100,9 @@ class Server:
                 self.receive_file(request.header.client_id, content_size, og_file_size, packet_num,
                                   total_packets, file_name, file_content)
             case 1029:
-                _CRC_ok()
+                pass
             case 1030:
-                _CRC_not_ok()
+                pass
 
     def register_new_user(self, payload):
         new_client_name = "todo parse paylod"
@@ -109,7 +124,7 @@ class Server:
         pass
 
     def reconnect(self, name):
-        if self.clients[name] is not "":
+        if self.clients[name] != "":
             self.send_response(responses.SuccessResponse)
         else:
             self.send_response(responses.FailedResponse)

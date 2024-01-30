@@ -21,7 +21,12 @@ class Db:
             AESKey TEXT
         );
         '''
-        cursor.execute(sql)
+        try:
+            cursor.execute(sql)
+        except sqlite3.OperationalError as e:
+            if "already exists" in str(e):
+                print(e)
+
         self.db.commit()
 
     def load_clients(self):
