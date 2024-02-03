@@ -51,7 +51,6 @@ class Db:
         return clients
 
     def add_client(self, client):
-        # todo: move to server utils
         cursor = self.db.cursor()
         query = '''INSERT INTO clients (ID, Name, PublicKey, LastSeen, AESKey) 
                       VALUES (?, ?, ?, ?, ?)'''
@@ -59,4 +58,9 @@ class Db:
                        (client.id, client.name, client.public_key, client.last_seen, client.aes_key))
 
     def update_client(self, name, aes_key, public_key):
-        return ""
+        cursor = self.db.cursor()
+        sql = "UPDATE clients SET aes_key = ?, public_key = ? WHERE name = ?;"
+        parameters = (aes_key, public_key, name)
+        cursor.execute(sql, parameters)
+        cursor.connection.commit()
+        return "Client updated successfully."

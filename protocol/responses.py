@@ -34,7 +34,14 @@ class FailedResponse(Response):
 
 class SendAESKeyResponse(Response):
     def __init__(self, client_id, aes_key):
-        super().__init__(1602, payload=bytes(client_id,aes_key))
+            self.client_id = client_id
+            self.aes_key = aes_key
+            super().__init__(1602, self.to_bytes())
+    def to_bytes(self):
+        packed_data = struct.pack(f'16sI{len(self.aes_key)}s',
+                                  self.client_id.encode(), len(self.aes_key), self.aes_key.encode())
+
+        return packed_data
 
 class CRCValidResponse(Response):
     def __init__(self, client_id, content_size, file_name, cksum):

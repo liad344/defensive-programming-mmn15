@@ -2,6 +2,7 @@ import logging
 import sqlite3
 
 import client
+import errors
 import services
 import protocol
 import socket
@@ -9,6 +10,7 @@ import selectors
 
 from client import Client
 from protocol import responses
+from services.requestparser import registration
 
 #  Protocol V0.0
 #
@@ -28,22 +30,22 @@ class Server:
     # todo: Add shutdown and clode all tcp/db connections
     def __init__(self):
         self.db_service = services.Db("name")
-        self.crypto_service = services.Crypto("name")
+        self.crypto_service = services.mycrypto("name")
         self.port = readConfigFile()
         self.host = "0.0.0.0"
         self.logger = logging.getLogger('server_logger')
         self.clients = self.db_service.load_clients()
-        self.parser = services.RequestParser()
+        self.parser = services
         self.selector = selectors.DefaultSelector()
 
     def update_client(self, name, aes_key, public_key):
         self.db_service.update_client(name, aes_key, public_key)
 
-        # todo: decide if clients is by id or by name- unclear from assignment
         self.clients[name].aes_key = aes_key
         self.clients[name].public_key = public_key
 
     def send_response(self, response):
+
         pass
 
     def accept(self, sock, mask):
@@ -56,15 +58,15 @@ class Server:
         with conn:
             header_bytes = conn.recv(HeaderSize)
             if header_bytes:
-              header = protocol.RequestHeader.from_bytes(header_bytes)
-              payload = conn.recv(header.payload_size)
-              req = protocol.Request(header, payload)
-              if req is not None:
-                self.request_router(req)
+                header = protocol.RequestHeader.from_bytes(header_bytes)
+                payload = conn.recv(header.payload_size)
+                req = protocol.Request(header, payload)
+                if req is not None:
+                    self.request_router(req)
             else:
-              print('closing', conn)
-              self.selector.unregister(conn)
-              conn.close()
+                print('closing', conn)
+                self.selector.unregister(conn)
+                conn.close()
 
     def listen(self):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -80,32 +82,50 @@ class Server:
                     callback(key.fileobj, mask)
         finally:
             s.close()
+
     def request_router(self, request):
-        print("in req router")
         match request.header.code:
             case 1025:
-                # todo: error handling
-                parsed = self.parser.registration(request)
-                self.register_new_user(parsed)
+                try:
+                    parsed = services.requestparser.registration(request)
+                    self.register_new_user(parsed)
+                except errors.FailedParsingRequest as e:
+                    self.logger.warning(e)
             case 1026:
-                name, key = self.parser.aes_key_request(request)
-                self.receive_public_key(name, key)
+                try:
+                    name, key = services.requestparser.aes_key_request(request)
+                    self.receive_public_key(name, key)
+                except errors.FailedParsingRequest as e:
+                    self.logger.warning(e)
+
             case 1027:
-                name = self.parser.reconnect(request)
-                self.reconnect(name)
+                try:
+                    name = services.requestparser.reconnect(request)
+                    self.reconnect(name)
+                except errors.FailedParsingRequest as e:
+                    self.logger.warning(e)
+
             case 1028:
-                # todo: error handling reading client id
-                content_size, og_file_size, packet_num, total_packets, file_name, file_content = (
-                    self.parser.receive_file_request(request))
-                self.receive_file(request.header.client_id, content_size, og_file_size, packet_num,
-                                  total_packets, file_name, file_content)
+                try:
+                    content_size, og_file_size, packet_num, total_packets, file_name, file_content = (
+                     services.requestparser.receive_file_request(request))
+                    self.receive_file(request.header.client_id, content_size, og_file_size, packet_num,
+                     total_packets, file_name, file_content)
+                except errors.FailedParsingRequest as e:
+                    self.logger.warning(e)
             case 1029:
-                pass
+                try:
+                    pass
+                except errors.FailedParsingRequest as e:
+                    self.logger.warning(e)
             case 1030:
-                pass
+                try:
+                    pass
+                except errors.FailedParsingRequest as e:
+                    self.logger.warning(e)
 
     def register_new_user(self, payload):
-        new_client_name = "todo parse paylod"
+        new_client_name = str(payload)
         client = Client(name=new_client_name)
         for client_id, client in self.clients.items():
             if client.name == new_client_name:
@@ -117,10 +137,13 @@ class Server:
         self.send_response(responses.SuccessResponse)
 
     def receive_public_key(self, name, public_key):
+        client_id = name # todo: get real id
         aes_key = self.crypto_service.generate_aes_key()
         self.crypto_service.encrypt_with_public_key(aes_key, public_key)
         self.update_client(name, aes_key, public_key)
-        self.send_response(responses.SendAESKeyResponse)
+
+        response = responses.SendAESKeyResponse(client_id, aes_key)
+        self.send_response(response.payload)
         pass
 
     def reconnect(self, name):
