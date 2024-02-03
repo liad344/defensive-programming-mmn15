@@ -1,3 +1,5 @@
+from Crypto.Random import get_random_bytes
+
 class Crypto:
     def __init__(self, name):
         self.name= name
